@@ -26,6 +26,11 @@ import com.example.a20l_0969_smd_assignment_3.ui.theme._20L_0969_SMD_ASSIGNMENT_
 
 class MainActivity : ComponentActivity() {
     private val READ_CONTACTS_PERMISSION_REQUEST = 1
+    data class Contact(val displayName: String, val phoneNumber: String)
+
+    // Initialize the DatabaseHelper as a property of MainActivity
+    private val dbHelper by lazy { DatabaseHelper(this) }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,7 +40,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    ContactList()
+                    ContactList(dbHelper) // Pass dbHelper to ContactList
                 }
             }
         }
@@ -54,10 +59,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+
     @SuppressLint("Range")
     private fun getContacts(onContactsImported: (List<Contact>) -> Unit) {
         val context = this
         val contacts = mutableListOf<Contact>()
+
+        // Create an instance of the DatabaseHelper
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.writableDatabase
 
         val contentResolver = context.contentResolver
         val cursor = contentResolver.query(
@@ -75,13 +86,20 @@ class MainActivity : ComponentActivity() {
                 val contactId = it.getString(it.getColumnIndex(ContactsContract.Contacts._ID))
                 val phoneNumber = getPhoneNumber(contentResolver, contactId)
 
+                // Insert the contact into the database
+                dbHelper.insertContact(displayName, phoneNumber)
+
                 contacts.add(Contact(displayName, phoneNumber))
             }
         }
 
         // Invoke the lambda with the imported contacts
         onContactsImported(contacts)
+
+        // Close the database
+        db.close()
     }
+
 
     @SuppressLint("Range")
     private fun getPhoneNumber(contentResolver: android.content.ContentResolver, contactId: String): String {
@@ -106,8 +124,9 @@ class MainActivity : ComponentActivity() {
 
 
     @Composable
-    fun ContactList() {
+    fun ContactList(dbHelper: DatabaseHelper) {
         val context = LocalContext.current
+
         var contactsState by remember { mutableStateOf(emptyList<Contact>()) }
         var isImported by remember { mutableStateOf(false) }
 
@@ -122,19 +141,22 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            Button(
-                onClick = {
-                    // Request contacts permission and import contacts
-                    requestContactsPermissionAndImport { contacts ->
-                        contactsState = contacts
-                        isImported = true
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp)
-            ) {
-                Text(text = "Import Contacts")
+            // Display the import button only if contacts are not imported
+            if (!isImported) {
+                Button(
+                    onClick = {
+                        // Request contacts permission and import contacts
+                        requestContactsPermissionAndImport() { contacts ->
+                            contactsState = contacts
+                            isImported = true
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Text(text = "Import Contacts")
+                }
             }
 
             // Display the contacts if imported
@@ -142,24 +164,21 @@ class MainActivity : ComponentActivity() {
                 ContactListView(
                     contacts = contactsState,
                     onMessageClicked = { contact ->
-                        // Implement logic for handling message click
-                        // For example, launch messaging app with the contact's phone number
                         composeMessage(context, contact.phoneNumber)
                     },
                     onCallClicked = { contact ->
-                        // Implement logic for handling call click
-                        // For example, initiate a call using the contact's phone number
                         composeCall(context, contact.phoneNumber)
                     },
                     onDeleteClicked = { contact ->
-                        // Implement logic for handling delete click
-                        // For example, remove the contact from the list
+                        dbHelper.deleteContact(contact.phoneNumber)
                         contactsState = contactsState.filterNot { it == contact }
                     }
                 )
             }
         }
     }
+
+
 
     // Function to launch the messaging app with the selected contact as the recipient
     private fun composeMessage(context: Context, phoneNumber: String) {
@@ -190,7 +209,7 @@ class MainActivity : ComponentActivity() {
                     contact = contact,
                     onMessageClicked = onMessageClicked,
                     onCallClicked = onCallClicked,
-                    onDeleteClicked = onDeleteClicked
+                    onDeleteClicked = { onDeleteClicked(contact) } // Pass the contact to onDeleteClicked
                 )
             }
         }
@@ -250,7 +269,6 @@ class MainActivity : ComponentActivity() {
 
                 Button(
                     onClick = {
-                        // Handle delete button click
                         isDeleteClicked = true
                     },
                     modifier = Modifier
@@ -259,6 +277,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text(text = "Delete")
                 }
+
             }
 
             // Handle actions based on button clicks
@@ -280,9 +299,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-
-
-    data class Contact(val displayName: String, val phoneNumber: String)
 
 }
